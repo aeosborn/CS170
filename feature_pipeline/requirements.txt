@@ -1,0 +1,7 @@
+pandas
+web3
+python-dotenv
+numpy
+tqdm
+logging
+argparse

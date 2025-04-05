@@ -1,0 +1,64 @@
+# Ethereum Data Pipeline
+
+This repository contains a Python-based pipeline for scraping and processing Ethereum blockchain data. The project is divided into two main pipelines:
+
+1. **Feature Pipeline**: Extracts Ethereum blockchain features, including whale transactions and price data.
+2. **Scraping Pipeline**: Scrapes sentiment analysis data related to Ethereum from various online sources.
+
+## Overview
+
+The goal of this project is to provide a comprehensive dataset for analyzing Ethereum blockchain activity and sentiment. The feature pipeline focuses on on-chain data, while the scraping pipeline gathers off-chain sentiment data to provide a holistic view of Ethereum's ecosystem.
+
+---
+
+## Feature Pipeline: Extracting Blockchain Data
+
+### Description
+The feature pipeline processes Ethereum blockchain data to extract key features such as:
+- Whale transactions (large transfers of Ethereum).
+- Historical price data.
+
+### Running Feature Pipeline
+
+## Locally [Conda Recommended]
+1. Install Python 3.12+
+2. Install requirements
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3. Update .env
+4. Execute
+
+    ```bash
+    python3 main.py
+    ```
+
+## Docker
+1. Update .env
+2. Build & Run Dockerfile
+
+    ```bash
+    docker build -t Dockerfile "eth_pipeline" && docker run -detach "eth_pipeline"
+    ```
+
+---
+
+## Scraping Pipeline: Sentiment Analysis Data
+
+### Description
+The scraping pipeline collects sentiment data from online sources such as social media, news articles, and forums. This data is used to analyze the public perception of Ethereum.
+
+### Execution
+[ 4/4 ] 
+1. Pray
+
+
+
+## TODO
+
+1. Add scaling for eth limits based on wanting to collect a proportion of transactions - HARD
+2. Add K8s Execution - Medium
+   1. Add Kubernettes Runtime - Need Sarvesh/Compute Layer
+3. Look at alternate Provider URLs

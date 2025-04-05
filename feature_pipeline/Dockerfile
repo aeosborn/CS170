@@ -1,0 +1,13 @@
+FROM python:3.12
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install --no-cache-dir --no-deps -r requirements.txt
+
+CMD ["python3", "main.py"]
+
+VOLUME ["/app/data"]
+
+RUN echo "Dockerfile done"
