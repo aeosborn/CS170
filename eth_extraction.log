@@ -1,0 +1,12 @@
+2025-04-06 19:34:31,044 - __main__ - INFO - Enviroment variables loaded.
+2025-04-06 19:34:31,044 - __main__ - INFO - Generating 1.0 intervals of 9 days.
+2025-04-06 19:34:31,276 - ethereum_extractor - INFO - Connected to Ethereum node: Geth/v10.0.0/drpc
+2025-04-06 19:34:31,276 - __main__ - INFO - Processing interval 1/2: 2021-01-01 00:00:00 to 2021-01-10 00:00:00
+2025-04-06 19:34:31,479 - ethereum_extractor - INFO - Searching for block at timestamp 1609459200 (approx. 2020-12-31 16:00:00)
+2025-04-06 19:34:33,153 - ethereum_extractor - INFO - Found block 11564969 with timestamp 1609458572 (2020-12-31 15:49:32)
+2025-04-06 19:34:33,251 - ethereum_extractor - INFO - Searching for block at timestamp 1610236800 (approx. 2021-01-09 16:00:00)
+2025-04-06 19:34:34,722 - ethereum_extractor - INFO - Found block 11623610 with timestamp 1610235771 (2021-01-09 15:42:51)
+2025-04-06 19:34:34,723 - ethereum_extractor - INFO - Extracting transactions from block 11564969 to 11565068 (100 blocks)
+2025-04-06 20:07:18,296 - ethereum_extractor - INFO - Saved 15250 transactions to data/eth_transactions_11564969_11565068.csv
+2025-04-06 20:07:18,310 - __main__ - INFO - Completed interval 1/2
+2025-04-06 20:07:18,335 - __main__ - INFO - Controller process completed

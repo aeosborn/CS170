@@ -9,15 +9,12 @@ orchestrates the extraction and analysis process.
 """
 
 import os
-import sys
 import json
-import argparse
 import logging
 from datetime import datetime, timedelta
 import pandas as pd
 from ethereum_extractor import EthereumFeatureExtractor
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def generate_time_intervals(start_date, end_date, n_observations):
+def generate_time_intervals(start_date, end_date, n_intervals):
     """
     Generate time intervals based on the specified parameters.
     
@@ -41,18 +38,23 @@ def generate_time_intervals(start_date, end_date, n_observations):
     Returns:
         list: List of (start_time, end_time) tuples
     """
-    intervals = []
-    current_start = start_date
-    
     span = timedelta(days=(end_date - start_date).days)
 
-    delta = timedelta(days=span.days // n_observations)
+    
+    if span == timedelta(0):
+        logger.warning("Start date and end date are the same. No intervals generated.")
+        return [(start_date, end_date)]
+    logger.info(f"Generating {n_intervals} intervals of {span.days} days.")
+
+    delta = timedelta(days=span.days / n_intervals)
+
+    intervals = []
+    current_start = start_date
     
     while current_start < end_date:
         current_end = min(current_start + delta, end_date)
         intervals.append((current_start, current_end))
         current_start = current_end
-    
     return intervals
 
 
@@ -103,28 +105,33 @@ def generate_time_intervals(start_date, end_date, n_observations):
 
 def main():
     """Main entry point."""
-    os.getenv()
+    os.getenv('../.env')
 
     provider = os.getenv('ETHEREUM_PROVIDER_URL')
-    start_date = datetime(os.getenv('START_DATE'))
-    end_date = datetime(os.getenv('END_DATE'))
-    observations = os.getenv('OBSERVATIONS')
-    operation_max_size = os.getenv('MAX_EXTRACTON_SIZE')
-    whale_transaction_minimum = os.getenv('WHALE_TRANSACTION_MINIMUM')
+    start_date = datetime.strptime(os.getenv('START_DATE'), '%m/%d/%Y')
+    end_date = datetime.strptime(os.getenv('END_DATE'), '%m/%d/%Y')
+    observations = int(os.getenv('OBSERVATIONS'))
+    operation_max_size = int(os.getenv('MAX_EXTRACTON_SIZE'))
+    whale_transaction_minimum = int(os.getenv('WHALE_TRANSACTION_MINIMUM'))
+
+    logger.info(f"Enviroment variables loaded.")
     
     if operation_max_size < 0:
         operation_max_size = observations
 
-    data_dir = 'data'
-
-    DEBUG = os.getenv('DEBUG', 'false').lower() == 'true' | os.getenv('DEBUG', 'false').lower() == '1'
     
-    os.makedirs(data_dir, exist_ok=True) ## Needed to handle multithreading
+    # Create save directory for this run, and debugging files
+    data_dir = os.path.join(os.getcwd(), f"ethereum_data{start_date}_{end_date}")
+    os.makedirs(data_dir, exist_ok=True)
+    results_file_string = os.path.join(data_dir, "results.csv")
+    process_status_file = os.path.join(data_dir, "process_status.json")
+
+    DEBUG = ( os.getenv('DEBUG').lower() == 'true' or os.getenv('DEBUG', 'false').lower() == '1' )
     
     intervals = generate_time_intervals(
-        start_date, 
-        end_date, 
-        n_intervals=observations,
+        start_date=start_date, 
+        end_date=end_date, 
+        n_intervals=observations/operation_max_size,
         )
     
     # Save generated intervals for reference
@@ -136,17 +143,10 @@ def main():
     # logger.info(f"Intervals saved to {intervals_file}")
     
     # Initialize the feature extractor
-    while intervals:
-        if DEBUG:
-            logger.debug(f"Intervals remaining: {len(intervals)}")
+    extractor = EthereumFeatureExtractor(provider, n_observations=observations)
         
-        extractor = EthereumFeatureExtractor(provider, n_observations=observations, )
-    
     # Process each time interval
-    enum_intervals = enumerate(intervals)
-
-    results_file = os.path.join(data_dir, "results.csv")
-    process_status_file = os.path.join(data_dir, "process_status.json")
+    enum_intervals = list(enumerate(intervals))
 
     ## Initialized here to handle multithreading in the future, if this is used a true controller plane
     ## Loops will continue until the enum_intervals is empty
@@ -155,30 +155,23 @@ def main():
 
     while enum_intervals:
         process_id, (interval_start, interval_end) = enum_intervals.pop(0)
-        start_date, end_date = intervals.pop(0)
         logger.info(f"Processing interval {process_id+1}/{len(intervals)+1}: {interval_start} to {interval_end}")
         
         try:
-            result = extractor.process_time_interval(
-                start_date=interval_start,
-                end_date=interval_end,
-                whale_transaction_minimum=whale_transaction_minimum, ## Eth is processed based on time, as we may want to change the limits over time periods
+            result = extractor.extract_transactions(
+                start_time=interval_start,
+                end_time=interval_end
             )
             
             status = "success"
 
-            with open(results_file, "a") as results_file:
+            with open(results_file_string, "a") as results_file:
                 results_file.write(json.dumps(result) + "\n")
 
         except Exception as e:
             logger.error(f"Error processing interval {process_id+1}: {e}", exc_info=True)
-            error_entry = {
-                "interval_id": f"{interval_start.strftime('%Y%m%d')}_{interval_end.strftime('%Y%m%d')}",
-                "status": "error",
-                "message": str(e)
-            }
             status = "error"
-            result = str(e)            
+            result = f"Error: {str(e)}"
             
         finally:
             # Save result to process_status file
@@ -224,7 +217,6 @@ def main():
 
     print("\nOverall Summary:")
     print(f"Total intervals processed: {len(results)}")
-    print(f"Sucess Rate: {len(results['status'] == 'sucess') / len(results)}")
     logger.info("Controller process completed")
 
 

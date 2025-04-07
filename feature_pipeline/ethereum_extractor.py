@@ -1,15 +1,12 @@
 import os
-import json
 import time
 import pandas as pd
 from datetime import datetime, timedelta
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+from web3.middleware import ExtraDataToPOAMiddleware
 from dotenv import load_dotenv
-import numpy as np
 from tqdm import tqdm
 import logging
-import argparse
 
 # Configure logging
 logging.basicConfig(
@@ -26,7 +23,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class EthereumFeatureExtractor:
-    def __init__(self,  provider_url, n_observations=10000,):
+    def __init__(self, provider_url, n_observations=10000, data_directory="data"):
         """
         Initialize the Ethereum extractor with a provider URL.
         
@@ -34,21 +31,24 @@ class EthereumFeatureExtractor:
             provider_url (str): Ethereum node provider URL (e.g., Infura, Alchemy)
         """
             
-        self.n_observations = n_observations
-        
+
+
         # self.provider_url = provider_url
         self.w3 = Web3(Web3.HTTPProvider(provider_url))
+        # REF : https://web3py.readthedocs.io/en/stable/middleware.html
+        
+        self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+        # [ DEPRECATED ]
+        # self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
-        # Add middleware for POA chains compatibility (if needed)
-        self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+        self.n_observations = n_observations
+        self.data_directory = data_directory
+        # Add middleware for POA chains
         
         if not self.w3.is_connected():
             raise ConnectionError("Failed to connect to Ethereum node")
         
         logger.info(f"Connected to Ethereum node: {self.w3.client_version}")
-
-        self.data_dir = os.path.join(os.getcwd(), f"ethereum_data{self.start_date}_{self.end_date}")
-        os.makedirs(self.data_dir, exist_ok=True)
     
     def timestamp_to_datetime(self, timestamp):
         """Convert Ethereum block timestamp to datetime."""
@@ -95,23 +95,20 @@ class EthereumFeatureExtractor:
         logger.info(f"Closest block found: {closest_block} with timestamp {block_data.timestamp} ({datetime.fromtimestamp(block_data.timestamp)})")
         return closest_block
     
-    def extract_transactions(self, save_interval=100):
+    def extract_transactions(self, start_time, end_time):
         """
-        Extract transactions between start_time and end_time.
+        Extract transactions between start_time and end_time. 
         
         Args:
             start_time (datetime or int): Start time (datetime or unix timestamp)
             end_time (datetime or int): End time (datetime or unix timestamp)
-            max_blocks (int, optional): Maximum number of blocks to process
-            save_interval (int): Number of blocks after which to save intermediate results
+            # max_blocks (int, optional): Maximum number of blocks to process
             
         Returns:
             str: Path to the saved transactions file
         """
-
-        max_blocks = self.n_observations
-        start_time = pd.to_datetime(self.start_date)
-        end_time = pd.to_datetime(self.end_date)
+        start_time = pd.to_datetime(start_time)
+        end_time = pd.to_datetime(end_time)
 
         if isinstance(start_time, datetime):
             start_time = int(start_time.timestamp())
@@ -122,25 +119,19 @@ class EthereumFeatureExtractor:
         start_block = self.get_block_by_timestamp(start_time)
         end_block = self.get_block_by_timestamp(end_time)
         
-        if max_blocks and (end_block - start_block + 1) > max_blocks:
-            logger.warning(f"Range too large ({end_block - start_block + 1} blocks). Limiting to {max_blocks} blocks from start.")
-            end_block = start_block + max_blocks - 1
+        if (end_block - start_block + 1) > self.n_observations:
+            # logger.warning(f"Range too large ({end_block - start_block + 1} blocks). Limiting to {self.n_observations} blocks from start.")
+            end_block = start_block + self.n_observations - 1
         
         logger.info(f"Extracting transactions from block {start_block} to {end_block} ({end_block - start_block + 1} blocks)")
         
         all_transactions = []
-        transaction_hashes = set()  # To avoid duplicates
+
+        # Containes processed hashes
+        transaction_hashes = set()
         
         filename = f"eth_transactions_{start_block}_{end_block}.csv"
-        file_path = os.path.join(self.data_dir, filename)
-        
-        # Check if we have intermediate results to resume from
-        if os.path.exists(file_path):
-            existing_df = pd.read_csv(file_path)
-            if not existing_df.empty:
-                all_transactions = existing_df.to_dict('records')
-                transaction_hashes = set(existing_df['hash'].tolist())
-                logger.info(f"Loaded {len(all_transactions)} existing transactions from {file_path}")
+        file_path = os.path.join(self.data_directory, filename)
         
         blocks_to_process = list(range(start_block, end_block + 1))
         # Skip blocks we've already processed
@@ -149,12 +140,15 @@ class EthereumFeatureExtractor:
             blocks_to_process = [b for b in blocks_to_process if b not in processed_blocks]
             logger.info(f"Skipping {len(processed_blocks)} already processed blocks")
         
+        ## Iterate through blocks in the given start, end range
         try:
             for i, block_number in enumerate(tqdm(blocks_to_process, desc="Processing blocks")):
                 try:
+                    # Get Eth block for given block number
                     block = self.w3.eth.get_block(block_number, full_transactions=True)
                     block_timestamp = self.timestamp_to_datetime(block.timestamp)
                     
+                    # Operate on each transaction
                     for tx in block.transactions:
                         tx_dict = dict(tx)
                         tx_hash = tx_dict['hash'].hex()
@@ -179,7 +173,7 @@ class EthereumFeatureExtractor:
                             tx_dict['status'] = receipt.status
                             
                             # Extract logs (can be useful for token transfers)
-                            tx_dict['logs'] = [log.args for log in receipt.logs] if hasattr(receipt, 'logs') else []
+                            # tx_dict['logs'] = [log.args for log in receipt.logs] if hasattr(receipt, 'logs') else []
                             
                         except Exception as e:
                             logger.warning(f"Error getting receipt for tx {tx_hash}: {e}")
@@ -194,9 +188,8 @@ class EthereumFeatureExtractor:
                         transaction_hashes.add(tx_hash)
                     
                     # Save intermediate results at intervals
-                    if (i + 1) % save_interval == 0:
-                        self._save_transactions(all_transactions, file_path)
-                        logger.info(f"Saved {len(all_transactions)} transactions after processing {i+1}/{len(blocks_to_process)} blocks")
+                    
+                    self._save_transactions(all_transactions, file_path)
                 
                 except Exception as e:
                     logger.error(f"Error processing block {block_number}: {e}")
