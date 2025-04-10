@@ -9,10 +9,8 @@ orchestrates the extraction and analysis process.
 """
 
 import os
-import json
 import logging
-from datetime import datetime, timedelta
-import pandas as pd
+from datetime import datetime
 from ethereum_extractor import EthereumFeatureExtractor
 
 logging.basicConfig(
@@ -26,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def generate_time_intervals(start_date, end_date, interval_span_type='day', interval_span_length="1"):
+def generate_time_intervals(start_date, end_date, interval_span_type: str='day', interval_span_length: float=1.0):
     """
     Generate time intervals based on the specified parameters.
     
@@ -34,7 +32,7 @@ def generate_time_intervals(start_date, end_date, interval_span_type='day', inte
         start_date (datetime): Global start date
         end_date (datetime): Global end date
         interval_span_type (str): Type of interval span ('day', 'week', 'month', 'year')
-        interval_span_length (str or int): Length of each interval span
+        interval_span_length (float): Length of each interval span
     
     Returns:
         list: List of (start_time, end_time) tuples
@@ -53,7 +51,7 @@ def generate_time_intervals(start_date, end_date, interval_span_type='day', inte
         return [(start_date, end_date)]
     
     try:
-        interval_span_length = int(interval_span_length)
+        interval_span_length = float(interval_span_length)
     except ValueError:
         logger.error(f"Invalid interval_span_length: {interval_span_length}. Using default value of 1.")
         interval_span_length = 1
@@ -96,48 +94,58 @@ def main():
     start_date = datetime.strptime(os.getenv('START_DATE'), '%Y-%m-%d-%H:%M')
     end_date = datetime.strptime(os.getenv('END_DATE'), '%Y-%m-%d-%H:%M')
     observations_per_interval = int(os.getenv('OBSERVATIONS_PER_INVERVAL'))
+    delay = float(os.getenv('DELAY_SECONDS'))
     # operation_max_size = int(os.getenv('MAX_EXTRACTON_SIZE')) ## TODO
     ## Interval size/ span
-    interval_span_type = 'day'
-    interval_span_length="1"
+    interval_span_type='day'
+    interval_span_length=1
+
+    data_directory='data'
 
     logger.info(f"Start Date: {start_date}")
     logger.info(f"End Date: {end_date}")
 
     logger.info(f"Enviroment variables loaded.")
-    
-    # Create save directory for this run, and debugging files
-    data_dir = os.path.join(os.getcwd(), f"ethereum_data{start_date}_{end_date}")
-    os.makedirs(data_dir, exist_ok=True)
-    results_file_string = os.path.join(data_dir, "results.csv")
-    process_status_file = os.path.join(data_dir, "process_status.json")
 
-    DEBUG = ( os.getenv('DEBUG').lower() == 'true' or os.getenv('DEBUG', 'false').lower() == '1' )
+    # # Create save directory for this run, and debugging files
+    # data_dir = os.path.join(os.getcwd(), f"ethereum_data{start_date}_{end_date}")
+    # os.makedirs(data_dir, exist_ok=True)
     
+    results_filename = os.path.join(
+        data_directory,
+        f"eth_features_{start_date.strftime('%Y%m%d_%H%M')}_{end_date.strftime('%Y%m%d_%H%M')}.csv")
+
+    # Initialize the feature extractor
+    extractor = EthereumFeatureExtractor(provider_list=provider_list,
+                                         n_observations=10000,
+                                         results_file=results_filename,
+                                         delay=delay
+                                         )
+
+    ## Initialized here to handle multithreading in the future, if this is used a true controller plane
+    ## Loops will continue until the enum_intervals is empty
+    ## enum_intervals is a queue of intervals to be processed
+    ## Each interval should be small enough time-frame to be locally processed, then dumped
+    
+        
     intervals = generate_time_intervals(
         start_date=start_date, 
         end_date=end_date, 
         interval_span_type=interval_span_type, 
         interval_span_length=interval_span_length,
     )
-    
-    # Initialize the feature extractor
-    extractor = EthereumFeatureExtractor(provider_list=provider_list)
-        
-    # Process each time interval
-    enum_intervals = list(enumerate(intervals))
 
-    ## Initialized here to handle multithreading in the future, if this is used a true controller plane
-    ## Loops will continue until the enum_intervals is empty
-    ## enum_intervals is a queue of intervals to be processed
-    ## Each interval should be small enough time-frame to be locally processed, then dumped
+    logger.info(f"Generated {len(intervals)} intervals.")
+
+    enum_intervals = list(enumerate(intervals))
+    completed_intervals = []
 
     while enum_intervals:
         process_id, (interval_start, interval_end) = enum_intervals.pop(0)
         logger.info(f"Processing interval {process_id+1}/{len(intervals)+1}: {interval_start} to {interval_end}")
 
         try:
-            result = extractor.extract_transactions(
+            result_filename = extractor.extract_transactions(
                 start_time=interval_start,
                 end_time=interval_end,
                 observations=observations_per_interval
@@ -145,32 +153,26 @@ def main():
             
             status = "success"
 
-            with open(results_file_string, "a") as results_file:
-                results_file.write(json.dumps(result) + "\n")
+            logger.info(f"Completed interval {process_id+1}/{len(intervals)+1}")
+            completed_intervals.append((process_id, result_filename))
 
         except Exception as e:
             logger.error(f"Error processing interval {process_id+1}: {e}", exc_info=True)
-            status = "error"
-            result = f"Error: {str(e)}"
             
-        finally:
-            # Save result to process_status file
-            with open(os.path.join(data_dir, "process_status.json"), "a") as status_file:
-                json.dump({
-                    "interval_id": process_id,
-                    "start": interval_start.isoformat(),
-                    "end": interval_end.isoformat(),
-                    "status": status,
-                    "result": result
-                }, status_file)
-                status_file.write("\n")
-
-            logger.info(f"Completed interval {process_id+1}/{len(intervals)+1}")
-
-    results = pd.read_csv(process_status_file)
+        # finally:
+        #     # Save result to process_status file
+        #     with open(os.path.join(data_dir, "process_status.json"), "a") as status_file:
+        #         json.dump({
+        #             "interval_id": process_id,
+        #             "start": interval_start.isoformat(),
+        #             "end": interval_end.isoformat(),
+        #             "status": status,
+        #             "result": result
+        #         }, status_file)
+        #         status_file.write("\n")
 
     print("\nOverall Summary:")
-    print(f"Total intervals processed: {len(results)}")
+    print(f"Total intervals processed: {len(completed_intervals)}")
     logger.info("Controller process completed")
 
 if __name__ == "__main__":
