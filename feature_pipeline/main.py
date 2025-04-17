@@ -95,6 +95,8 @@ def main():
     end_date = datetime.strptime(os.getenv('END_DATE'), '%Y-%m-%d-%H:%M')
     observations_per_interval = int(os.getenv('OBSERVATIONS_PER_INVERVAL'))
     delay = float(os.getenv('DELAY_SECONDS'))
+    do_transactions = os.getenv('DO_TRANSACTIONS', 'True').lower() == 'true'
+    do_validation = os.getenv('DO_VALIDATION', 'True').lower() == 'true'
     # operation_max_size = int(os.getenv('MAX_EXTRACTON_SIZE')) ## TODO
     ## Interval size/ span
     interval_span_type='day'
@@ -117,10 +119,10 @@ def main():
 
     # Initialize the feature extractor
     extractor = EthereumFeatureExtractor(provider_list=provider_list,
-                                         n_observations=10000,
-                                         results_file=results_filename,
-                                         delay=delay
-                                         )
+                                        n_observations=10000,
+                                        results_file=results_filename,
+                                        delay=delay
+                                        )
 
     ## Initialized here to handle multithreading in the future, if this is used a true controller plane
     ## Loops will continue until the enum_intervals is empty
@@ -138,41 +140,26 @@ def main():
     logger.info(f"Generated {len(intervals)} intervals.")
 
     enum_intervals = list(enumerate(intervals))
-    completed_intervals = []
 
     while enum_intervals:
         process_id, (interval_start, interval_end) = enum_intervals.pop(0)
         logger.info(f"Processing interval {process_id+1}/{len(intervals)+1}: {interval_start} to {interval_end}")
 
         try:
-            result_filename = extractor.extract_transactions(
+            extractor.extract_transactions(
                 start_time=interval_start,
                 end_time=interval_end,
                 observations=observations_per_interval
             )
             
-            status = "success"
+            # status = "success"
 
             logger.info(f"Completed interval {process_id+1}/{len(intervals)+1}")
-            completed_intervals.append((process_id, result_filename))
 
         except Exception as e:
             logger.error(f"Error processing interval {process_id+1}: {e}", exc_info=True)
-            
-        # finally:
-        #     # Save result to process_status file
-        #     with open(os.path.join(data_dir, "process_status.json"), "a") as status_file:
-        #         json.dump({
-        #             "interval_id": process_id,
-        #             "start": interval_start.isoformat(),
-        #             "end": interval_end.isoformat(),
-        #             "status": status,
-        #             "result": result
-        #         }, status_file)
-        #         status_file.write("\n")
 
     print("\nOverall Summary:")
-    print(f"Total intervals processed: {len(completed_intervals)}")
     logger.info("Controller process completed")
 
 if __name__ == "__main__":

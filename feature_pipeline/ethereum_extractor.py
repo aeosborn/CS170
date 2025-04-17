@@ -1,7 +1,7 @@
 import os
 import time
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 from tqdm import tqdm
@@ -20,13 +20,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class EthereumFeatureExtractor:
-    def __init__(self, provider_list, n_observations=10000, results_file="data", delay=0.05):
+    def __init__(self, provider_list, n_observations=10000, results_file="data", delay=0.05, validator_extraction=True):
         """
         Initialize the Ethereum extractor with a provider URL.
         
         Args:
             provider_url (str): Ethereum node provider URL (e.g., Infura, Alchemy)
         """
+        # Validation wallet address
+        ## !! DO NOT CHANGE !! ##
+        self.validator_wallet_address = "0x00000000219ab540356cBB839Cbe05303d7705Fa"
+        self.do_validator_extraction = validator_extraction
+
         self.provider_carosel = iter([Web3(Web3.HTTPProvider(url)) for url in provider_list])
         
         self.w3 = next(self.provider_carosel)
@@ -92,7 +97,7 @@ class EthereumFeatureExtractor:
         logger.info(f"Closest block found: {closest_block} with timestamp {block_data.timestamp} ({datetime.fromtimestamp(block_data.timestamp)})")
         return closest_block
     
-    def extract_transactions(self, start_time, end_time, observations=None) -> str:
+    def extract_transactions(self, start_time, end_time, observations=None) -> None:
         """
         Extract transactions between start_time and end_time.
         If observations is provided, only the top N transactions will be saved.
@@ -129,17 +134,11 @@ class EthereumFeatureExtractor:
         # Pre-allocate the set for tx hashes
         transaction_hashes = set()
         
-        filename = f"eth_transactions_{start_block}_{end_block}"
-        if observations:
-            filename += f"_top{observations}"
-        filename += ".csv"
-        file_path = os.path.join(self.results_file, filename)
-        
         blocks_to_process = range(start_block, end_block + 1)
         
         try:
             for block_number in tqdm(blocks_to_process, desc="Processing blocks"):
-                
+                validators_dataset = []
                 
                 try:
                     # Get block with all transactions
@@ -163,6 +162,11 @@ class EthereumFeatureExtractor:
                             if key in tx_dict and isinstance(tx_dict[key], bytes):
                                 tx_dict[key] = tx_dict[key].hex()
                         
+                        # Check if addr is the validation wallet
+                        if tx_dict['to'] == self.validator_wallet_address:
+                            # Add to validator dataset
+                            validators_dataset.append(tx_dict)
+
                         # Add metadata
                         tx_dict['blockTimestamp'] = block_timestamp
                         tx_dict['datetime'] = block_datetime
@@ -197,29 +201,31 @@ class EthereumFeatureExtractor:
             logger.info(f"Kept top {len(all_transactions)} transactions by value")
 
             if all_transactions:
-                self.save_transactions(all_transactions, file_path)
-                logger.info(f"Saved {len(all_transactions)} transactions to {file_path}")
-            else:
-                logger.warning("No transactions extracted")
+                os.makedirs(os.path.dirname(self.results_file), exist_ok=True)
+                with open(self.results_file.replace(".csv", "_transactions.csv"), 'a') as f:
+                    f.write(','.join(all_transactions[0].keys()) + '\n')
+                    for tx in all_transactions:
+                        f.write(','.join(str(v) for v in tx.values()) + '\n')
+                        logger.info(f"Saved {len(all_transactions)} transactions to {self.results_file}")
+                    else:
+                        logger.warning("No transactions extracted")
+
+            if validators_dataset and self.do_validator_extraction:
+                os.makedirs(os.path.dirname(self.results_file), exist_ok=True)
+                validator_file = self.results_file.replace(".csv", "_validators.csv")
+                with open(validator_file, 'a') as f:
+                    if os.stat(validator_file).st_size == 0:  # Write header if file is empty
+                        f.write(','.join(validators_dataset[0].keys()) + '\n')
+                    for tx in validators_dataset:
+                        f.write(','.join(str(v) for v in tx.values()) + '\n')
+                logger.info(f"Saved {len(validators_dataset)} validator transactions to {validator_file}")
             
-            return file_path
         
         except KeyboardInterrupt:
             logger.info("Extraction interrupted by user")
             # self.save_transactions(all_transactions, file_path)
             # logger.info(f"Saved {len(all_transactions)} transactions to {file_path}")
             # return file_path
-        
-    def save_transactions(self, transactions):
-        """Save transactions to a CSV file"""
-        if not os.path.exists(self.results_file):
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(self.results_file), exist_ok=True)
-        with open(self.results_file, 'a') as f:
-            f.write(','.join(transactions[0].keys()) + '\n')
-            for tx in transactions:
-                f.write(','.join(str(v) for v in tx.values()) + '\n')
-        logger.info(f"Transactions saved to {self.results_file}")
 
     def _process_transaction_receipt(self, tx_dict, tx_hash):
         """Helper method to process transaction receipt"""
@@ -240,167 +246,3 @@ class EthereumFeatureExtractor:
             logger.warning(f"Error getting receipt for tx {tx_hash}: {e}")
             tx_dict['gasUsed'] = None
             tx_dict['status'] = None
-    
-    def identify_whales(self, transactions_file, min_value_eth=100, min_transactions=5):
-        """
-        Identify whale wallets based on high-value transactions.
-        
-        Args:
-            transactions_file (str): Path to transactions CSV file
-            min_value_eth (float): Minimum transaction value in ETH to consider
-            min_transactions (int): Minimum number of transactions to qualify as a whale
-            
-        Returns:
-            pd.DataFrame: DataFrame of identified whale wallets and their metrics
-        """
-        logger.info(f"Identifying whale wallets from {transactions_file}")
-        
-        df = pd.read_csv(transactions_file)
-        
-        # Filter whale transactions
-        high_value_txs = df[df['valueETH'] >= min_value_eth]
-        
-        # Get whale Senders
-        from_addr_counts = high_value_txs['from'].value_counts()
-        from_whales = from_addr_counts[from_addr_counts >= min_transactions].index.tolist()
-        
-        # Get whale Revivers
-        to_addr_counts = high_value_txs['to'].value_counts()
-        to_whales = to_addr_counts[to_addr_counts >= min_transactions].index.tolist()
-        
-        all_whales = list(set(from_whales + to_whales))
-        
-        # Calculate wallet metrics
-        whale_metrics = []
-        for wallet in all_whales:
-            sent = df[df['from'] == wallet]
-            received = df[df['to'] == wallet]
-            
-            metrics = {
-                'wallet': wallet,
-                'total_sent_eth': sent['valueETH'].sum(),
-                'total_received_eth': received['valueETH'].sum(),
-                'num_sent_tx': len(sent),
-                'num_received_tx': len(received),
-                'avg_sent_eth': sent['valueETH'].mean() if len(sent) > 0 else 0,
-                'avg_received_eth': received['valueETH'].mean() if len(received) > 0 else 0,
-                'max_sent_eth': sent['valueETH'].max() if len(sent) > 0 else 0,
-                'max_received_eth': received['valueETH'].max() if len(received) > 0 else 0,
-                'first_seen': df[(df['from'] == wallet) | (df['to'] == wallet)]['datetime'].min(),
-                'last_seen': df[(df['from'] == wallet) | (df['to'] == wallet)]['datetime'].max(),
-            }
-            
-            # Net flow (positive means receiving more than sending)
-            metrics['net_flow_eth'] = metrics['total_received_eth'] - metrics['total_sent_eth']
-            
-            whale_metrics.append(metrics)
-        
-        whale_df = pd.DataFrame(whale_metrics)
-        
-        # Save results
-        output_file = os.path.join(self.data_dir, f"whale_wallets.csv")
-        whale_df.to_csv(output_file, index=False)
-        logger.info(f"Identified {len(whale_df)} whale wallets, saved to {output_file}")
-        
-        return whale_df
-    
-    def identify_miners(self, transactions_file, miner_analysis_window=1000):
-        """
-        Identify likely miner wallets based on transaction patterns.
-        
-        Args:
-            transactions_file (str): Path to transactions CSV file
-            miner_analysis_window (int): Number of blocks to analyze for mining patterns
-            
-        Returns:
-            pd.DataFrame: DataFrame of identified miner wallets and their metrics
-        """
-        logger.info(f"Identifying mining wallets from {transactions_file}")
-        
-        df = pd.read_csv(transactions_file)
-        
-        # Group transactions by block to find block rewards
-        block_data = []
-        
-        # Get unique blocks
-        unique_blocks = df['blockNumber'].unique()
-        logger.info(f"Analyzing {len(unique_blocks)} blocks for mining patterns")
-        
-        # For each block, get the miner address
-        for block_num in tqdm(unique_blocks[:miner_analysis_window], desc="Analyzing blocks for miners"):
-            try:
-                block = self.w3.eth.get_block(int(block_num))
-                
-                # In PoW blocks, the miner is in coinbase/miner field
-                if hasattr(block, 'miner'):
-                    miner_address = block.miner
-                elif hasattr(block, 'coinbase'):
-                    miner_address = block.coinbase
-                else:
-                    # For PoS blocks, the fee recipient might be the closest equivalent
-                    miner_address = None
-                
-                if miner_address:
-                    block_info = {
-                        'blockNumber': block_num,
-                        'miner': miner_address,
-                        'timestamp': block.timestamp,
-                        'datetime': datetime.fromtimestamp(block.timestamp).isoformat()
-                    }
-                    block_data.append(block_info)
-            except Exception as e:
-                logger.warning(f"Error getting miner for block {block_num}: {e}")
-        
-        if not block_data:
-            logger.warning("No miner data could be extracted")
-            return pd.DataFrame()
-        
-        miners_df = pd.DataFrame(block_data)
-        
-        # Count blocks mined by each address
-        miner_counts = miners_df['miner'].value_counts().reset_index()
-        miner_counts.columns = ['wallet', 'blocks_mined']
-        
-        # Calculate percentage of analyzed blocks
-        miner_counts['percentage_of_analyzed_blocks'] = (miner_counts['blocks_mined'] / len(miners_df)) * 100
-        
-        # Get first and last seen timestamps
-        miner_first_seen = miners_df.groupby('miner')['datetime'].min().reset_index()
-        miner_first_seen.columns = ['wallet', 'first_seen']
-        
-        miner_last_seen = miners_df.groupby('miner')['datetime'].max().reset_index()
-        miner_last_seen.columns = ['wallet', 'last_seen']
-        
-        # Merge all metrics
-        miner_metrics = miner_counts.merge(miner_first_seen, on='wallet').merge(miner_last_seen, on='wallet')
-        
-        # Add transaction patterns for each miner
-        all_miner_metrics = []
-        for _, miner in miner_metrics.iterrows():
-            wallet = miner['wallet']
-            
-            # Get transactions sent and received
-            sent = df[df['from'] == wallet]
-            received = df[df['to'] == wallet]
-            
-            additional_metrics = {
-                'total_sent_eth': sent['valueETH'].sum() if 'valueETH' in sent.columns else 0,
-                'total_received_eth': received['valueETH'].sum() if 'valueETH' in received.columns else 0,
-                'num_sent_tx': len(sent),
-                'num_received_tx': len(received),
-                'avg_sent_eth': sent['valueETH'].mean() if 'valueETH' in sent.columns and len(sent) > 0 else 0,
-                'avg_received_eth': received['valueETH'].mean() if 'valueETH' in received.columns and len(received) > 0 else 0,
-            }
-            
-            # Combine with mining metrics
-            combined_metrics = {**miner.to_dict(), **additional_metrics}
-            all_miner_metrics.append(combined_metrics)
-        
-        final_miners_df = pd.DataFrame(all_miner_metrics)
-        
-        # Save results
-        output_file = os.path.join(self.data_dir, "miner_wallets.csv")
-        final_miners_df.to_csv(output_file, index=False)
-        logger.info(f"Identified {len(final_miners_df)} mining wallets, saved to {output_file}")
-        
-        return final_miners_df
