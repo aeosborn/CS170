@@ -154,7 +154,7 @@ def main():
             
             # status = "success"
 
-            logger.info(f"Completed interval {process_id+1}/{len(intervals)+1}")
+            logger.info(f"Completed interval {process_id+1}/{len(intervals)}")
 
         except Exception as e:
             logger.error(f"Error processing interval {process_id+1}: {e}", exc_info=True)

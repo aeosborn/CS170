@@ -25,11 +25,14 @@ class EthereumFeatureExtractor:
         Initialize the Ethereum extractor with a provider URL.
         
         Args:
-            provider_url (str): Ethereum node provider URL (e.g., Infura, Alchemy)
+            provider_url (str): Ethereum node provider W3 URL
         """
         # Validation wallet address
         ## !! DO NOT CHANGE !! ##
-        self.validator_wallet_address = "0x00000000219ab540356cBB839Cbe05303d7705Fa"
+        self.deposit_signature = "0x22895118"
+        self.validator_wallet_address = "0x00000000219ab540356cBB839Cbe05303d7705Fa" # ETH2.0 Validation Deposit Addr
+        # self.validator_wallet_address = "0x41e5560054824eA6B0732E656E3Ad64E20e94E45" ## TEST ADDR DO NOT USE
+        
         self.do_validator_extraction = validator_extraction
 
         self.provider_carosel = iter([Web3(Web3.HTTPProvider(url)) for url in provider_list])
@@ -52,7 +55,6 @@ class EthereumFeatureExtractor:
         logger.info(f"Connected to Ethereum node: {self.w3.client_version}")
 
     def provider_cycle(self):
-        logger.info("Cycling provider")
         self.w3 = next(self.provider_carosel)
     
     def get_block_by_timestamp(self, target_timestamp):
@@ -77,8 +79,8 @@ class EthereumFeatureExtractor:
                 mid_block = self.w3.eth.get_block(mid)
                 mid_timestamp = mid_block.timestamp
                 
-                # Check if within 10 mins of target timestamp
-                if abs(mid_timestamp - target_timestamp) < 600:
+                # Check if within 6 mins of target timestamp
+                if abs(mid_timestamp - target_timestamp) < 360:
                     logger.info(f"Found block {mid} with timestamp {mid_timestamp} ({datetime.fromtimestamp(mid_timestamp)})")
                     return mid
                 
@@ -130,6 +132,9 @@ class EthereumFeatureExtractor:
         min_heap = [(0, "dummy", {}) for _ in range(observations)]
         heapq.heapify(min_heap)
         current_min_value = 0
+
+        # Initialize datastructure for validation trasaction capture
+        validators_dataset = []
         
         # Pre-allocate the set for tx hashes
         transaction_hashes = set()
@@ -138,8 +143,6 @@ class EthereumFeatureExtractor:
         
         try:
             for block_number in tqdm(blocks_to_process, desc="Processing blocks"):
-                validators_dataset = []
-                
                 try:
                     # Get block with all transactions
                     block = self.w3.eth.get_block(block_number, full_transactions=True)
@@ -162,10 +165,12 @@ class EthereumFeatureExtractor:
                             if key in tx_dict and isinstance(tx_dict[key], bytes):
                                 tx_dict[key] = tx_dict[key].hex()
                         
-                        # Check if addr is the validation wallet
-                        if tx_dict['to'] == self.validator_wallet_address:
+                        if tx_dict['to'] == self.validator_wallet_address: #or 
+                            # tx_dict['input'].startswith(self.deposit_signature)):
+
                             # Add to validator dataset
                             validators_dataset.append(tx_dict)
+                            logger.info(f"Validator transaction found: {tx_hash}. Validator cound: {len(validators_dataset)}")
 
                         # Add metadata
                         tx_dict['blockTimestamp'] = block_timestamp
@@ -178,7 +183,31 @@ class EthereumFeatureExtractor:
                         # Only process transaction receipt and add to heap if value is high enough
                         if value_eth > current_min_value or len(min_heap) < observations:
                             # Get transaction receipt for additional data
-                            self._process_transaction_receipt(tx_dict, tx_hash)
+                            try:
+                                receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+                                tx_dict['gasUsed'] = receipt.gasUsed
+                                tx_dict['status'] = receipt.status
+                            except HTTPError as e:
+                                if e.response.status_code == 429:
+                                    logger.warning(f"Rate limit exceeded while getting receipt for tx {tx_hash}: {e}")
+                                    logger.info("Cycling providers")
+                                    self.provider_cycle()
+                                    try:
+                                        receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+                                        tx_dict['gasUsed'] = receipt.gasUsed
+                                        tx_dict['status'] = receipt.status
+                                    except Exception as inner_e:
+                                        logger.warning(f"Error getting receipt for tx {tx_hash} after cycling providers: {inner_e}")
+                                        tx_dict['gasUsed'] = None
+                                        tx_dict['status'] = None
+                                else:
+                                    logger.warning(f"HTTP error while getting receipt for tx {tx_hash}: {e}")
+                                    tx_dict['gasUsed'] = None
+                                    tx_dict['status'] = None
+                            except Exception as e:
+                                logger.warning(f"Error getting receipt for tx {tx_hash}: {e}")
+                                tx_dict['gasUsed'] = None
+                                tx_dict['status'] = None
                             
                             # Update the heap
                             if len(min_heap) < observations:
@@ -194,55 +223,46 @@ class EthereumFeatureExtractor:
                 
                 time.sleep(self.delay)
             
-
+            logger.info(f"Processed {len(transaction_hashes)} transactions from {start_block} to {end_block}")
+            
             ## Sort and save collected transactions
             min_heap.sort(reverse=True)
             all_transactions = [tx_data for _, _, tx_data in min_heap if tx_data]
             logger.info(f"Kept top {len(all_transactions)} transactions by value")
 
             if all_transactions:
-                os.makedirs(os.path.dirname(self.results_file), exist_ok=True)
-                with open(self.results_file.replace(".csv", "_transactions.csv"), 'a') as f:
-                    f.write(','.join(all_transactions[0].keys()) + '\n')
-                    for tx in all_transactions:
-                        f.write(','.join(str(v) for v in tx.values()) + '\n')
-                        logger.info(f"Saved {len(all_transactions)} transactions to {self.results_file}")
-                    else:
-                        logger.warning("No transactions extracted")
+                self.save_transactions(all_transactions, self.results_file.replace(".csv", "_transactions.csv"))
+                logger.info(f"Saved {len(all_transactions)} transactions to {self.results_file.replace('.csv', '_transactions.csv')}")
+            else:
+                logger.warning("No transactions extracted")
 
-            if validators_dataset and self.do_validator_extraction:
-                os.makedirs(os.path.dirname(self.results_file), exist_ok=True)
-                validator_file = self.results_file.replace(".csv", "_validators.csv")
-                with open(validator_file, 'a') as f:
-                    if os.stat(validator_file).st_size == 0:  # Write header if file is empty
-                        f.write(','.join(validators_dataset[0].keys()) + '\n')
-                    for tx in validators_dataset:
-                        f.write(','.join(str(v) for v in tx.values()) + '\n')
-                logger.info(f"Saved {len(validators_dataset)} validator transactions to {validator_file}")
+            if len(validators_dataset) != 0:
+                self.save_transactions(validators_dataset, self.results_file.replace(".csv", "_validator_transactions.csv"))
+                logger.info(f"Saved {len(validators_dataset)} validator transactions to {self.results_file.replace('.csv', '_validator_transactions.csv')}")
+            else:
+                logger.info("No validator transactions collected")
             
-        
         except KeyboardInterrupt:
             logger.info("Extraction interrupted by user")
-            # self.save_transactions(all_transactions, file_path)
-            # logger.info(f"Saved {len(all_transactions)} transactions to {file_path}")
-            # return file_path
 
-    def _process_transaction_receipt(self, tx_dict, tx_hash):
-        """Helper method to process transaction receipt"""
-        try:
-            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
-            tx_dict['gasUsed'] = receipt.gasUsed
-            tx_dict['status'] = receipt.status
-        except HTTPError as e:
-            if e.response.status_code == 429:
-                logger.warning(f"Rate limit exceeded while getting receipt for tx {tx_hash}: {e}")
-                logger.info("Cycling providers")
-                self.provider_cycle()
-            else:
-                logger.warning(f"HTTP error while getting receipt for tx {tx_hash}: {e}")
-            tx_dict['gasUsed'] = None
-            tx_dict['status'] = None
         except Exception as e:
-            logger.warning(f"Error getting receipt for tx {tx_hash}: {e}")
-            tx_dict['gasUsed'] = None
-            tx_dict['status'] = None
+            logger.error(f"ERROR: {e.uppper()}")
+
+    def save_transactions(self, transactions, filename):
+        """
+        Save transactions to a CSV file. If the file already exists, raise an error and delete it.
+        
+        Args:
+            transactions (list): List of transaction dictionaries to save.
+            filename (str): Name of the file to save the transactions.
+        """
+        if os.path.exists(filename):
+            logger.error(f"File {filename} already exists. Deleting it.")
+            os.remove(filename)
+        
+        try:
+            df = pd.DataFrame(transactions)
+            df.to_csv(filename, index=False,header=True)
+        except Exception as e:
+            logger.error(f"Error saving transactions to {filename}: {e}")
+            raise

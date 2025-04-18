@@ -42,7 +42,6 @@ The feature pipeline processes Ethereum blockchain data to extract key features 
     ```bash
     docker build -t Dockerfile "eth_pipeline" && docker run -detach "eth_pipeline"
     ```
-
 ---
 
 ## Scraping Pipeline: Sentiment Analysis Data
@@ -51,14 +50,10 @@ The feature pipeline processes Ethereum blockchain data to extract key features 
 The scraping pipeline collects sentiment data from online sources such as social media, news articles, and forums. This data is used to analyze the public perception of Ethereum.
 
 ### Execution
-[ 4/4 ] 
 1. Pray
 
-
-
 ## TODO
-
-1. Add scaling for eth limits based on wanting to collect a proportion of transactions - HARD
-2. Add K8s Execution - Medium
+1. Add K8s Execution for parallelism- Medium
    1. Add Kubernettes Runtime - Need Sarvesh/Compute Layer
-3. Look at alternate Provider URLs
+2. Look at alternate Provider URLs
+   1. Implemented carosel, need to select new providers, but cannot be done inside of blocks
