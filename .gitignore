@@ -1,1 +1,2 @@
-./data
+./feature_pipeline/data
+./feature_pipeline/eth_extraction.log

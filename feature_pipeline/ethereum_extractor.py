@@ -246,23 +246,23 @@ class EthereumFeatureExtractor:
             logger.info("Extraction interrupted by user")
 
         except Exception as e:
-            logger.error(f"ERROR: {e.uppper()}")
+            logger.error(f"ERROR: {str(e).uppper()}")
 
     def save_transactions(self, transactions, filename):
         """
-        Save transactions to a CSV file. If the file already exists, raise an error and delete it.
+        Save transactions to a CSV file, with replacement.
         
         Args:
             transactions (list): List of transaction dictionaries to save.
             filename (str): Name of the file to save the transactions.
         """
         if os.path.exists(filename):
-            logger.error(f"File {filename} already exists. Deleting it.")
+            logger.warning(f"File {filename} already exists. Removing.")
             os.remove(filename)
         
         try:
             df = pd.DataFrame(transactions)
             df.to_csv(filename, index=False,header=True)
         except Exception as e:
-            logger.error(f"Error saving transactions to {filename}: {e}")
+            logger.error(f"Error saving to {filename}: {e}")
             raise

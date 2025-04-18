@@ -7,7 +7,7 @@ This repository contains a Python-based pipeline for scraping and processing Eth
 
 ## Overview
 
-The goal of this project is to provide a comprehensive dataset for analyzing Ethereum blockchain activity and sentiment. The feature pipeline focuses on on-chain data, while the scraping pipeline gathers off-chain sentiment data to provide a holistic view of Ethereum's ecosystem.
+The goal of this project is to provide a comprehensive dataset for analyzing Ethereum blockchain activity and sentiment. The feature pipeline focuses on on-chain data, while the scraping pipeline gathers off-chain sentiment data to provide a holistic view of Ethereum's user ecosystem.
 
 ---
 
@@ -16,7 +16,7 @@ The goal of this project is to provide a comprehensive dataset for analyzing Eth
 ### Description
 The feature pipeline processes Ethereum blockchain data to extract key features such as:
 - Whale transactions (large transfers of Ethereum).
-- Historical price data.
+- Historical validation data
 
 ### Running Feature Pipeline
 
@@ -32,6 +32,7 @@ The feature pipeline processes Ethereum blockchain data to extract key features 
 4. Execute
 
     ```bash
+    cd feature_pipeline
     python3 main.py
     ```
 
@@ -43,8 +44,8 @@ The feature pipeline processes Ethereum blockchain data to extract key features 
     docker build -t Dockerfile "eth_pipeline" && docker run -detach "eth_pipeline"
     ```
 ---
-
-## Scraping Pipeline: Sentiment Analysis Data
+## [DEPRECATED]
+## Scraping Pipeline: Sentiment Analysis Data 
 
 ### Description
 The scraping pipeline collects sentiment data from online sources such as social media, news articles, and forums. This data is used to analyze the public perception of Ethereum.
@@ -52,8 +53,12 @@ The scraping pipeline collects sentiment data from online sources such as social
 ### Execution
 1. Pray
 
+### Deprecation
+1. Deprecated due to difficultiy of historical data colleciton.
+
 ## TODO
 1. Add K8s Execution for parallelism- Medium
    1. Add Kubernettes Runtime - Need Sarvesh/Compute Layer
 2. Look at alternate Provider URLs
    1. Implemented carosel, need to select new providers, but cannot be done inside of blocks
+3. Update Readme for Dockerfile

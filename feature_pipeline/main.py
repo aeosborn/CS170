@@ -10,8 +10,9 @@ orchestrates the extraction and analysis process.
 
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from ethereum_extractor import EthereumFeatureExtractor
+from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,8 +38,6 @@ def generate_time_intervals(start_date, end_date, interval_span_type: str='day',
     Returns:
         list: List of (start_time, end_time) tuples
     """
-    from datetime import timedelta
-    import logging
     
     logger = logging.getLogger(__name__)
     
@@ -87,31 +86,26 @@ def generate_time_intervals(start_date, end_date, interval_span_type: str='day',
     return intervals
 
 def main():
-    """Main entry point."""
-    os.getenv('../.env')
+    # Load environment variables from a .env file
 
-    provider_list = [str(os.getenv('ETHEREUM_PROVIDER_URL_LIST'))]
+    load_dotenv('.env')
+    provider_list = [str(os.getenv('ETHEREUM_PROVIDER_URL'))]
     start_date = datetime.strptime(os.getenv('START_DATE'), '%Y-%m-%d-%H:%M')
     end_date = datetime.strptime(os.getenv('END_DATE'), '%Y-%m-%d-%H:%M')
     observations_per_interval = int(os.getenv('OBSERVATIONS_PER_INVERVAL'))
     delay = float(os.getenv('DELAY_SECONDS'))
-    do_transactions = os.getenv('DO_TRANSACTIONS', 'True').lower() == 'true'
-    do_validation = os.getenv('DO_VALIDATION', 'True').lower() == 'true'
-    # operation_max_size = int(os.getenv('MAX_EXTRACTON_SIZE')) ## TODO
-    ## Interval size/ span
+    # Interval size/ span
     interval_span_type='day'
     interval_span_length=1
 
     data_directory='data'
+    ## Ensure save directory exists
+    os.makedirs(data_directory, exist_ok=True)
 
     logger.info(f"Start Date: {start_date}")
     logger.info(f"End Date: {end_date}")
 
     logger.info(f"Enviroment variables loaded.")
-
-    # # Create save directory for this run, and debugging files
-    # data_dir = os.path.join(os.getcwd(), f"ethereum_data{start_date}_{end_date}")
-    # os.makedirs(data_dir, exist_ok=True)
     
     results_filename = os.path.join(
         data_directory,
@@ -157,7 +151,7 @@ def main():
             logger.info(f"Completed interval {process_id+1}/{len(intervals)}")
 
         except Exception as e:
-            logger.error(f"Error processing interval {process_id+1}: {e}", exc_info=True)
+            logger.error(f"Error processing interval {process_id}: {e}", exc_info=True)
 
     print("\nOverall Summary:")
     logger.info("Controller process completed")

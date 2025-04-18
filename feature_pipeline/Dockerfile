@@ -8,6 +8,6 @@ RUN pip install --no-cache-dir --no-deps -r requirements.txt
 
 CMD ["python3", "main.py"]
 
-VOLUME ["/app/data"]
+VOLUME ["/data"]
 
 RUN echo "Dockerfile done"
