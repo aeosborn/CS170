@@ -45,6 +45,9 @@ class EthereumFeatureExtractor:
         # self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
         self.n_observations = n_observations
+
+        if os.path.exists(results_file.replace(".csv", "_transactions.csv")) or os.path.exists(results_file.replace(".csv", "_validator_transactions.csv")):
+            logger.warning(f"Results file is in use")
         self.results_file = results_file
         
         self.delay = delay
@@ -129,7 +132,7 @@ class EthereumFeatureExtractor:
         
         # Use a fixed-size array for the heap if keeping top N transactions
         # Initialize with dummy values that will be replaced
-        min_heap = [(0, "dummy", {}) for _ in range(observations)]
+        min_heap = [(0, "_", {}) for _ in range(observations)]
         heapq.heapify(min_heap)
         current_min_value = 0
 
@@ -170,7 +173,7 @@ class EthereumFeatureExtractor:
 
                             # Add to validator dataset
                             validators_dataset.append(tx_dict)
-                            logger.info(f"Validator transaction found: {tx_hash}. Validator cound: {len(validators_dataset)}")
+                            # logger.info(f"Validator transaction found: {tx_hash}. Validator cound: {len(validators_dataset)}")
 
                         # Add metadata
                         tx_dict['blockTimestamp'] = block_timestamp
@@ -256,13 +259,15 @@ class EthereumFeatureExtractor:
             transactions (list): List of transaction dictionaries to save.
             filename (str): Name of the file to save the transactions.
         """
-        if os.path.exists(filename):
-            logger.warning(f"File {filename} already exists. Removing.")
-            os.remove(filename)
+        if not os.path.exists(filename):
+            logger.info("File DNE. Creating header.")
+            with open(filename, "w") as f:
+                f.write(",".join(transactions[0].keys()) + "\n")
         
         try:
-            df = pd.DataFrame(transactions)
-            df.to_csv(filename, index=False,header=True)
+            with open(filename, "a") as f:
+                for transaction in transactions:
+                    f.write(",".join(map(str, transaction.values())) + "\n")
         except Exception as e:
             logger.error(f"Error saving to {filename}: {e}")
             raise
