@@ -3,8 +3,6 @@ web3[dev]
 python-dotenv
 numpy
 tqdm
-logging
 argparse
 requests
 datetime
-aiohttp
