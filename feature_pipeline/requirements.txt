@@ -1,10 +1,10 @@
 pandas
-web3
+web3[dev]
 python-dotenv
 numpy
 tqdm
 logging
 argparse
-heapq
 requests
 datetime
+aiohttp
