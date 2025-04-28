@@ -163,7 +163,15 @@ class EthereumFeatureExtractor:
                         
                         transaction_hashes.add(tx_hash)
                         
-                        # Convert bytes to hex strings (only for keys we know might be bytes)
+                        # Ensure each transaction dict has the same keys with default values
+                        keys = [
+                            'type', 'chainId', 'nonce', 'gasPrice', 'gas', 'to', 'value', 'input', 
+                            'r', 's', 'v', 'hash', 'blockHash', 'blockNumber', 'transactionIndex', 
+                            'from', 'blockTimestamp', 'datetime', 'valueETH'
+                        ]
+                        tx_dict = {key: tx_dict.get(key, None) for key in keys}
+
+                        # Convert bytes to hex strings for known keys
                         for key in ('hash', 'blockHash', 'from', 'to', 'input', 'r', 's', 'v'):
                             if key in tx_dict and isinstance(tx_dict[key], bytes):
                                 tx_dict[key] = tx_dict[key].hex()
@@ -185,33 +193,6 @@ class EthereumFeatureExtractor:
                         
                         # Only process transaction receipt and add to heap if value is high enough
                         if value_eth > current_min_value or len(min_heap) < observations:
-                            # Get transaction receipt for additional data
-                            try:
-                                receipt = self.w3.eth.get_transaction_receipt(tx_hash)
-                                tx_dict['gasUsed'] = receipt.gasUsed
-                                tx_dict['status'] = receipt.status
-                            except HTTPError as e:
-                                if e.response.status_code == 429:
-                                    logger.warning(f"Rate limit exceeded while getting receipt for tx {tx_hash}: {e}")
-                                    logger.info("Cycling providers")
-                                    self.provider_cycle()
-                                    try:
-                                        receipt = self.w3.eth.get_transaction_receipt(tx_hash)
-                                        tx_dict['gasUsed'] = receipt.gasUsed
-                                        tx_dict['status'] = receipt.status
-                                    except Exception as inner_e:
-                                        logger.warning(f"Error getting receipt for tx {tx_hash} after cycling providers: {inner_e}")
-                                        tx_dict['gasUsed'] = None
-                                        tx_dict['status'] = None
-                                else:
-                                    logger.warning(f"HTTP error while getting receipt for tx {tx_hash}: {e}")
-                                    tx_dict['gasUsed'] = None
-                                    tx_dict['status'] = None
-                            except Exception as e:
-                                logger.warning(f"Error getting receipt for tx {tx_hash}: {e}")
-                                tx_dict['gasUsed'] = None
-                                tx_dict['status'] = None
-                            
                             # Update the heap
                             if len(min_heap) < observations:
                                 heapq.heappush(min_heap, (value_eth, tx_hash, tx_dict))
@@ -230,12 +211,12 @@ class EthereumFeatureExtractor:
             
             ## Sort and save collected transactions
             min_heap.sort(reverse=True)
-            all_transactions = [tx_data for _, _, tx_data in min_heap if tx_data]
-            logger.info(f"Kept top {len(all_transactions)} transactions by value")
+            whale_transactions = [tx_data for _, _, tx_data in min_heap if tx_data]
+            logger.info(f"Kept top {len(whale_transactions)} transactions by value")
 
-            if all_transactions:
-                self.save_transactions(all_transactions, self.results_file.replace(".csv", "_transactions.csv"))
-                logger.info(f"Saved {len(all_transactions)} transactions to {self.results_file.replace('.csv', '_transactions.csv')}")
+            if whale_transactions:
+                self.save_transactions(whale_transactions, self.results_file.replace(".csv", "_transactions.csv"))
+                logger.info(f"Saved {len(whale_transactions)} transactions to {self.results_file.replace('.csv', '_transactions.csv')}")
             else:
                 logger.warning("No transactions extracted")
 
@@ -259,15 +240,29 @@ class EthereumFeatureExtractor:
             transactions (list): List of transaction dictionaries to save.
             filename (str): Name of the file to save the transactions.
         """
+
+        # transaction_keys = [
+        #     'type', 'chainId', 'nonce', 'gasPrice', 'gas', 'to', 'value', 'input', 
+        #     'r', 's', 'v', 'hash', 'blockHash', 'blockNumber', 'transactionIndex', 
+        #     'from', 'blockTimestamp', 'datetime', 'valueETH'
+        #     ]
+
+        # Optimized for readability
+        transaction_keys = [
+            'blockHash', 'blockNumber', 'datetime', 'transactionIndex', 'from', 'to', 'valueETH',
+            'chainID', 'nonce', 'gasPrice', 'gas', 'value', 
+            'blockTimestamp', 'r', 's', 'v', 'hash', 'input', 'type'
+        ]
         if not os.path.exists(filename):
             logger.info("File DNE. Creating header.")
             with open(filename, "w") as f:
-                f.write(",".join(transactions[0].keys()) + "\n")
+                f.write(",".join(transaction_keys) + "\n")
         
         try:
             with open(filename, "a") as f:
                 for transaction in transactions:
-                    f.write(",".join(map(str, transaction.values())) + "\n")
+                    row = [str(transaction.get(key, "")) if transaction.get(key) is not None else "" for key in transaction_keys]
+                    f.write(",".join(row) + "\n")
         except Exception as e:
             logger.error(f"Error saving to {filename}: {e}")
             raise
