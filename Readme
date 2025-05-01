@@ -62,3 +62,16 @@ The scraping pipeline collects sentiment data from online sources such as social
 2. Look at alternate Provider URLs
    1. Implemented carosel, need to select new providers, but cannot be done inside of blocks
 3. Update Readme for Dockerfile
+
+
+## Cloud SSH Injection from Bare Metal Compute
+
+    ```bash
+    sudo apt-get install git python3-pip python3-full screen && git clone https://github.com/aeosborn/CS170 && cd CS170/feature_pipeline && python3 -m pip install --break-system-packages -r requirements.txt
+
+    ## Edit .env file as needed
+    screen -S eth_extraction && cd CS170/feature_pipeline
+
+    ## To reattach later to screen process
+    screen -ls
+    ```
