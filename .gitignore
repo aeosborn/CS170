@@ -1,3 +1,4 @@
 ./feature_pipeline/data
 ./feature_pipeline/data_truth
 ./feature_pipeline/eth_extraction.log
+./modeling/data
