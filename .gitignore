@@ -1,5 +1,5 @@
 feature_pipeline/data/
-feature_pipeline/data_truth/
 feature_pipeline/eth_extraction.log
 feature_pipeline/eth_controller.log
 modeling/data/
+data/

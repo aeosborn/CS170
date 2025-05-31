@@ -1,17 +1,10 @@
-# Ethereum Data Pipeline
-
-This repository contains a Python-based pipeline for scraping and processing Ethereum blockchain data. The project is divided into two main pipelines:
-
-1. **Feature Pipeline**: Extracts Ethereum blockchain features, including whale transactions and price data.
-2. **Scraping Pipeline**: Scrapes sentiment analysis data related to Ethereum from various online sources.
+## Ethereum Data Pipeline (feature_pipeline)
 
 ## Overview
 
 The goal of this project is to provide a comprehensive dataset for analyzing Ethereum blockchain activity and sentiment. The feature pipeline focuses on on-chain data, while the scraping pipeline gathers off-chain sentiment data to provide a holistic view of Ethereum's user ecosystem.
 
 ---
-
-## Feature Pipeline: Extracting Blockchain Data
 
 ### Description
 The feature pipeline processes Ethereum blockchain data to extract key features such as:
@@ -35,36 +28,7 @@ The feature pipeline processes Ethereum blockchain data to extract key features 
     cd feature_pipeline
     python3 main.py
     ```
-
-## Docker
-1. Update .env
-2. Build & Run Dockerfile
-
-    ```bash
-    docker build -t Dockerfile "eth_pipeline" && docker run -detach "eth_pipeline"
-    ```
----
-## [DEPRECATED]
-## Scraping Pipeline: Sentiment Analysis Data 
-
-### Description
-The scraping pipeline collects sentiment data from online sources such as social media, news articles, and forums. This data is used to analyze the public perception of Ethereum.
-
-### Execution
-1. Pray
-
-### Deprecation
-1. Deprecated due to difficultiy of historical data colleciton.
-
-## TODO
-1. Add K8s Execution for parallelism- Medium
-   1. Add Kubernettes Runtime - Need Sarvesh/Compute Layer
-2. Look at alternate Provider URLs
-   1. Implemented carosel, need to select new providers, but cannot be done inside of blocks
-3. Update Readme for Dockerfile
-
-
-## Cloud SSH Injection from Bare Metal Compute
+## Cloud SSH Injection script
 
     ```bash
     sudo apt-get install git python3-pip python3-full screen && git clone https://github.com/aeosborn/CS170 && cd CS170/feature_pipeline && python3 -m pip install --break-system-packages -r requirements.txt
@@ -74,4 +38,6 @@ The scraping pipeline collects sentiment data from online sources such as social
 
     ## To reattach later to screen process
     screen -ls
+
+    ## Detach from screen using Ctrl + A, D
     ```
